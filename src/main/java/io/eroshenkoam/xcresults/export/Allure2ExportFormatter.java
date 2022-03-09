@@ -147,6 +147,26 @@ public class Allure2ExportFormatter implements ExportFormatter {
             return;
         }
 
+        if (
+                activityTitle.startsWith("Some attachments were deleted")
+                        || activityTitle.startsWith("Some screenshots were deleted ")
+                        || activityTitle.startsWith("Added attachment ")
+        ) {
+            return;
+        }
+
+        if (activityTitle.startsWith("Get all elements bound by index for: Descendants matching type Alert")) {
+            return;
+        }
+
+        if (activityTitle.startsWith("Checking existence of")) {
+            return;
+        }
+
+        if (activityTitle.startsWith("Tear Down")) {
+            return;
+        }
+
         final StepResult step = new StepResult()
                 .setName(activityTitle)
                 .setStatus(Status.PASSED)
