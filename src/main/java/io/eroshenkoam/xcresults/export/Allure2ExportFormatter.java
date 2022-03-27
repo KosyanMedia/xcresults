@@ -10,13 +10,10 @@ import io.qameta.allure.model.StatusDetails;
 import io.qameta.allure.model.StepResult;
 import io.qameta.allure.model.TestResult;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Objects;
-import java.util.Optional;
+import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 import static io.eroshenkoam.xcresults.util.ParseUtil.parseDate;
 import static java.util.Objects.isNull;
@@ -43,6 +40,30 @@ public class Allure2ExportFormatter implements ExportFormatter {
     private static final String VALUES = "_values";
 
     private static final String SUITE = "suite";
+
+    // Must be pre-initialized, {@see https://rules.sonarsource.com/java/RSPEC-4248}
+    private static final Pattern ID_PATTERN = Pattern.compile("allure\\.id:(?<id>.*)");
+    private static final Pattern NAME_PATTERN =
+            Pattern.compile("allure\\.name:(?<name>.*)");
+    private static final Pattern DESCRIPTION_PATTERN =
+            Pattern.compile("allure\\.description:(?<description>.*)");
+    private static final Pattern LABEL_PATTERN =
+            Pattern.compile("allure\\.label\\.(?<name>.*?):(?<value>.*)");
+    private static final Pattern LINK_PATTERN =
+            Pattern.compile("allure\\.link\\.(?<name>.*?)(|\\[(?<type>.*)]):(?<url>.*)");
+
+    private static final Set<String> APP_SPECIFIC_ACTIVITIES_TO_EXCLUDE = Arrays.stream(new String[]{
+            "Set Up", "Open ru.aviasales.app", "Launch ru.aviasales.app", "Wait for accessibility to load",
+            "Setting up automation session", "Synthesize event", "Capturing element debug description",
+            "Tear Down"
+    }).collect(Collectors.toSet());
+
+    private static final Set<String> APP_SPECIFIC_ACTIVITIES_PREFIXES_TO_EXCLUDE = Arrays.stream(new String[]{
+            "Terminate ru.aviasales.app", "Get all elements", "Some attachments were deleted",
+            "Some screenshots were deleted ", "Added attachment ", "Get all elements bound by index for:",
+            "Checking `", "Wait for ru.aviasales.app", "Find the ", "Tap \"", "Check for interrupting", "Waiting ",
+            "Swipe down \"", "Press \"", "Checking existence of "
+    }).collect(Collectors.toSet());
 
     @Override
     public TestResult format(final ExportMeta meta, final JsonNode node) {
@@ -101,8 +122,7 @@ public class Allure2ExportFormatter implements ExportFormatter {
         }
         final String activityTitle = title.get();
 
-        final Matcher idMatcher = Pattern.compile("allure\\.id:(?<id>.*)")
-                .matcher(activityTitle);
+        final Matcher idMatcher = ID_PATTERN.matcher(activityTitle);
         if (idMatcher.matches()) {
             final Label label = new Label()
                     .setName("AS_ID")
@@ -110,20 +130,17 @@ public class Allure2ExportFormatter implements ExportFormatter {
             context.getResult().getLabels().add(label);
             return;
         }
-        final Matcher nameMatcher = Pattern.compile("allure\\.name:(?<name>.*)")
-                .matcher(activityTitle);
+        final Matcher nameMatcher = NAME_PATTERN.matcher(activityTitle);
         if (nameMatcher.matches()) {
             context.getResult().setName(nameMatcher.group("name"));
             return;
         }
-        final Matcher descriptionMatcher = Pattern.compile("allure\\.description:(?<description>.*)")
-                .matcher(activityTitle);
+        final Matcher descriptionMatcher = DESCRIPTION_PATTERN.matcher(activityTitle);
         if (descriptionMatcher.matches()) {
             context.getResult().setDescription(descriptionMatcher.group("description"));
             return;
         }
-        final Matcher labelMatcher = Pattern.compile("allure\\.label\\.(?<name>.*?):(?<value>.*)")
-                .matcher(activityTitle);
+        final Matcher labelMatcher = LABEL_PATTERN.matcher(activityTitle);
         if (labelMatcher.matches()) {
             final Label label = new Label()
                     .setName(labelMatcher.group("name"))
@@ -131,8 +148,7 @@ public class Allure2ExportFormatter implements ExportFormatter {
             context.getResult().getLabels().add(label);
             return;
         }
-        final Matcher linkMatcher = Pattern.compile("allure\\.link\\.(?<name>.*?)(|\\[(?<type>.*)]):(?<url>.*)")
-                .matcher(activityTitle);
+        final Matcher linkMatcher = LINK_PATTERN.matcher(activityTitle);
         if (linkMatcher.matches()) {
             final Link link = new Link()
                     .setName(linkMatcher.group("name"))
@@ -147,23 +163,11 @@ public class Allure2ExportFormatter implements ExportFormatter {
             return;
         }
 
-        if (
-                activityTitle.startsWith("Some attachments were deleted")
-                        || activityTitle.startsWith("Some screenshots were deleted ")
-                        || activityTitle.startsWith("Added attachment ")
-        ) {
+        if (APP_SPECIFIC_ACTIVITIES_TO_EXCLUDE.contains(activityTitle)) {
             return;
         }
 
-        if (activityTitle.startsWith("Get all elements bound by index for: Descendants matching type Alert")) {
-            return;
-        }
-
-        if (activityTitle.startsWith("Checking existence of")) {
-            return;
-        }
-
-        if (activityTitle.startsWith("Tear Down")) {
+        if (APP_SPECIFIC_ACTIVITIES_PREFIXES_TO_EXCLUDE.stream().anyMatch(activityTitle::startsWith)) {
             return;
         }
 
