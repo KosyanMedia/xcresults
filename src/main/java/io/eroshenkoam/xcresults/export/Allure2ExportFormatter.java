@@ -65,6 +65,14 @@ public class Allure2ExportFormatter implements ExportFormatter {
             "Swipe down \"", "Press \"", "Checking existence of "
     }).collect(Collectors.toSet());
 
+    private static final Label UI_TEST_LAYER = new Label()
+            .setName("layer")
+            .setValue("uiTest");
+
+    private static final Label OS_TAG = new Label()
+            .setName("Os")
+            .setValue("ios");
+
     @Override
     public TestResult format(final ExportMeta meta, final JsonNode node) {
         final TestResult result = new TestResult()
@@ -128,6 +136,7 @@ public class Allure2ExportFormatter implements ExportFormatter {
                     .setName("AS_ID")
                     .setValue(idMatcher.group("id"));
             context.getResult().getLabels().add(label);
+            context.getResult().getLabels().add(UI_TEST_LAYER);
             return;
         }
         final Matcher nameMatcher = NAME_PATTERN.matcher(activityTitle);
@@ -214,6 +223,9 @@ public class Allure2ExportFormatter implements ExportFormatter {
             step.getAttachments().addAll(getAttachments(activity.get(ATTACHMENTS).get(VALUES)));
         }
         context.getCurrent().getSteps().add(step);
+        if (!context.getResult().getLabels().contains(OS_TAG)) {
+            context.getResult().getLabels().add(OS_TAG);
+        }
     }
 
     @SuppressWarnings("PMD.AvoidInstantiatingObjectsInLoops")
