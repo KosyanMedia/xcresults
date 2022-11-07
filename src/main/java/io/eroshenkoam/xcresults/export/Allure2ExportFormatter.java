@@ -65,9 +65,9 @@ public class Allure2ExportFormatter implements ExportFormatter {
             "Swipe down \"", "Press \"", "Checking existence of "
     }).collect(Collectors.toSet());
 
-    private static final Label KEY_SCENARIO_TEST_LAYER = new Label()
-            .setName("layer")
-            .setValue("KeyScenarioTest");
+    private static final Label KEY_SCENARIO_TEST = new Label()
+            .setName("KeyScenarioTest")
+            .setValue("UI Test");
 
     private static final Label OS_TAG = new Label()
             .setName("Os")
@@ -136,7 +136,7 @@ public class Allure2ExportFormatter implements ExportFormatter {
                     .setName("AS_ID")
                     .setValue(idMatcher.group("id"));
             context.getResult().getLabels().add(label);
-            context.getResult().getLabels().add(KEY_SCENARIO_TEST_LAYER);
+            context.getResult().getLabels().add(KEY_SCENARIO_TEST);
             return;
         }
         final Matcher nameMatcher = NAME_PATTERN.matcher(activityTitle);
