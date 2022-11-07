@@ -67,7 +67,7 @@ public class Allure2ExportFormatter implements ExportFormatter {
 
     private static final Label KEY_SCENARIO_TEST = new Label()
             .setName("KeyScenarioTest")
-            .setValue("UI Test");
+            .setValue("UI Tests");
 
     private static final Label OS_TAG = new Label()
             .setName("Os")
