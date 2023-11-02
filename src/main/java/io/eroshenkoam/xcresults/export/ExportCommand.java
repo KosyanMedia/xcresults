@@ -3,27 +3,29 @@ package io.eroshenkoam.xcresults.export;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
+import io.eroshenkoam.xcresults.carousel.CarouselPostProcessor;
+import io.qameta.allure.model.ExecutableItem;
+import io.qameta.allure.model.TestResult;
 import org.apache.commons.io.FileUtils;
+import org.apache.commons.io.FilenameUtils;
 import picocli.CommandLine;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.UUID;
+import java.util.*;
 
-import static io.eroshenkoam.xcresults.util.ParseUtil.parseDate;
+import static io.eroshenkoam.xcresults.util.FormatUtil.getResultFilePath;
+import static io.eroshenkoam.xcresults.util.FormatUtil.parseDate;
 
 @CommandLine.Command(
         name = "export", mixinStandardHelpOptions = true,
         description = "Export XC test results to json with attachments"
 )
 public class ExportCommand implements Runnable {
+
+    public static final String FILE_EXTENSION_HEIC = "heic";
 
     private static final String ACTIONS = "actions";
     private static final String ACTION_RESULT = "actionResult";
@@ -37,6 +39,7 @@ public class ExportCommand implements Runnable {
     private static final String TESTS = "tests";
     private static final String SUBTESTS = "subtests";
 
+    private static final String FAILURE_SUMMARIES = "failureSummaries";
     private static final String ACTIVITY_SUMMARIES = "activitySummaries";
     private static final String SUBACTIVITIES = "subactivities";
 
@@ -64,9 +67,21 @@ public class ExportCommand implements Runnable {
 
     @CommandLine.Option(
             names = {"--format"},
-            description = "Export format (json, allure2)"
+            description = "Export format (json, allure2), *deprecated"
     )
     protected ExportFormat format = ExportFormat.allure2;
+
+    @CommandLine.Option(
+            names = {"--add-carousel-attachment"},
+            description = "Add carousel attachment to test results"
+    )
+    private Boolean addCarouselAttachment;
+
+    @CommandLine.Option(
+            names = {"--carousel-template-path"},
+            description = "Carousel attachment template path"
+    )
+    private String carouselTemplatePath;
 
     @CommandLine.Parameters(
             index = "0",
@@ -117,31 +132,55 @@ public class ExportCommand implements Runnable {
             for (JsonNode summary : testRef.get(SUMMARIES).get(VALUES)) {
                 for (JsonNode testableSummary : summary.get(TESTABLE_SUMMARIES).get(VALUES)) {
                     final ExportMeta testMeta = getTestMeta(meta, testableSummary);
-                    for (JsonNode test : testableSummary.get(TESTS).get(VALUES)) {
-                        getTestSummaries(test).forEach(testSummary -> {
-                            testSummaries.put(testSummary, testMeta);
-                        });
+                    if (testableSummary.has(TESTS) && testableSummary.get(TESTS).has(VALUES)) {
+                        for (JsonNode test : testableSummary.get(TESTS).get(VALUES)) {
+                            getTestSummaries(test).forEach(testSummary -> {
+                                testSummaries.put(testSummary, testMeta);
+                            });
+                        }
+                    } else {
+                        System.out.printf("No tests found for '%s'%n", testableSummary.get("name").get(VALUE));
                     }
                 }
             }
         });
 
-        System.out.println(String.format("Export information about %s test summaries...", testSummaries.size()));
+        System.out.printf("Export information about %s test summaries...%n", testSummaries.size());
         final Map<String, String> attachmentsRefs = new HashMap<>();
-        testSummaries.forEach((testSummary, meta) -> {
-            exportTestSummary(meta, testSummary);
-            if (testSummary.has(ACTIVITY_SUMMARIES)) {
-                for (final JsonNode activity : testSummary.get(ACTIVITY_SUMMARIES).get(VALUES)) {
-                    attachmentsRefs.putAll(getAttachmentRefs(activity));
-                }
-            }
-        });
-        System.out.println(String.format("Export information about %s attachments...", attachmentsRefs.size()));
+        final Map<Path, TestResult> testResults = new HashMap<>();
+        for (final Map.Entry<JsonNode, ExportMeta> entry : testSummaries.entrySet()) {
+            final JsonNode testSummary = entry.getKey();
+            final ExportMeta meta = entry.getValue();
+
+            final TestResult testResult = new Allure2ExportFormatter().format(meta, testSummary);
+            final Path testSummaryPath = getResultFilePath(outputPath);
+            mapper.writeValue(testSummaryPath.toFile(), testResult);
+
+            final Map<String, List<String>> attachmentSources = getAttachmentSources(testResult);
+            final List<JsonNode> summaries = new ArrayList<>();
+            summaries.addAll(getAttributeValues(testSummary, ACTIVITY_SUMMARIES));
+            summaries.addAll(getAttributeValues(testSummary, FAILURE_SUMMARIES));
+            summaries.forEach(summary -> {
+                getAttachmentRefs(summary).forEach((name, ref) -> {
+                    if (attachmentSources.containsKey(name)) {
+                        final List<String> sources = attachmentSources.get(name);
+                        sources.forEach(source -> attachmentsRefs.put(source, ref));
+                    }
+                });
+            });
+            testResults.put(testSummaryPath, testResult);
+        }
+        System.out.printf("Export information about %s attachments...%n", attachmentsRefs.size());
         for (Map.Entry<String, String> attachment : attachmentsRefs.entrySet()) {
-            final Path attachmentPath = outputPath.resolve(attachment.getKey());
             final String attachmentRef = attachment.getValue();
+            final Path attachmentPath = outputPath.resolve(attachment.getKey());
             exportReference(attachmentRef, attachmentPath);
         }
+        final List<ExportPostProcessor> postProcessors = new ArrayList<>();
+        if (Objects.nonNull(addCarouselAttachment)) {
+            postProcessors.add(new CarouselPostProcessor(carouselTemplatePath));
+        }
+        postProcessors.forEach(postProcessor -> postProcessor.processTestResults(outputPath, testResults));
     }
 
     private ExportMeta getTestMeta(final ExportMeta meta, final JsonNode testableSummary) {
@@ -152,31 +191,19 @@ public class ExportCommand implements Runnable {
         return exportMeta;
     }
 
-    private void exportTestSummary(final ExportMeta meta, final JsonNode testSummary) {
-        Path testSummaryPath = null;
-        Object formattedResult = null;
-        final String uuid = UUID.randomUUID().toString();
-        switch (format) {
-            case json: {
-                final String testSummaryFilename = String.format("%s.json", uuid);
-                testSummaryPath = outputPath.resolve(testSummaryFilename);
-                formattedResult = new JsonExportFormatter().format(meta, testSummary);
-                break;
-            }
-            case allure2: {
-                final String testSummaryFilename = String.format("%s-result.json", uuid);
-                testSummaryPath = outputPath.resolve(testSummaryFilename);
-                formattedResult = new Allure2ExportFormatter().format(meta, testSummary);
-                break;
-            }
+    private Map<String, List<String>> getAttachmentSources(final ExecutableItem executableItem) {
+        final Map<String, List<String>> attachments = new HashMap<>();
+        if (Objects.nonNull(executableItem.getAttachments())) {
+            executableItem.getAttachments().forEach(a -> {
+                final List<String> sources = attachments.getOrDefault(a.getName(), new ArrayList<>());
+                sources.add(a.getSource());
+                attachments.put(a.getName(), sources);
+            });
         }
-        try {
-            if (Objects.nonNull(formattedResult)) {
-                mapper.writeValue(testSummaryPath.toFile(), formattedResult);
-            }
-        } catch (IOException e) {
-            throw new RuntimeException(e);
+        if (Objects.nonNull(executableItem.getSteps())) {
+            executableItem.getSteps().forEach(s -> attachments.putAll(getAttachmentSources(s)));
         }
+        return attachments;
     }
 
     private Map<String, String> getAttachmentRefs(final JsonNode test) {
@@ -217,6 +244,14 @@ public class ExportCommand implements Runnable {
         return summaries;
     }
 
+    private List<JsonNode> getAttributeValues(final JsonNode node, final String attributeName) {
+        final List<JsonNode> result = new ArrayList<>();
+        if (node.has(attributeName) && node.get(attributeName).has(VALUES)) {
+            node.get(attributeName).get(VALUES).forEach(result::add);
+        }
+        return result;
+    }
+
     private JsonNode readSummary() {
         final ProcessBuilder builder = new ProcessBuilder();
         builder.command(
@@ -243,8 +278,8 @@ public class ExportCommand implements Runnable {
     }
 
     private void exportReference(final String id, final Path output) {
-        final ProcessBuilder builder = new ProcessBuilder();
-        builder.command(
+        final ProcessBuilder exportBuilder = new ProcessBuilder();
+        exportBuilder.command(
                 "xcrun",
                 "xcresulttool",
                 "export",
@@ -253,7 +288,30 @@ public class ExportCommand implements Runnable {
                 "--id", id,
                 "--output-path", output.toAbsolutePath().toString()
         );
-        readProcessOutput(builder);
+        readProcessOutput(exportBuilder);
+        if (FILE_EXTENSION_HEIC.equals(FilenameUtils.getExtension(output.toString()))) {
+            convertHeicToJpeg(output);
+        }
+    }
+
+    private void convertHeicToJpeg(Path heicPath) {
+        try {
+            final Path parent = heicPath.getParent();
+            final String jpegFilename = String.format("%s.%s", FilenameUtils.getBaseName(heicPath.toString()), "jpeg");
+            final Path jpegFilePath = parent.resolve(jpegFilename);
+            final ProcessBuilder convertBuilder = new ProcessBuilder();
+            convertBuilder.command(
+                    "sips", "-s",
+                    "format", "jpeg",
+                    heicPath.toAbsolutePath().toString(),
+                    "--out", jpegFilePath.toAbsolutePath().toString()
+            );
+            Process process = convertBuilder.start();
+            process.waitFor();
+            FileUtils.deleteQuietly(heicPath.toFile());
+        } catch (IOException | InterruptedException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     private JsonNode readProcessOutput(final ProcessBuilder builder) {
