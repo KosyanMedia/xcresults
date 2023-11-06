@@ -1,14 +1,7 @@
 package io.eroshenkoam.xcresults.export;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import io.qameta.allure.model.Attachment;
-import io.qameta.allure.model.ExecutableItem;
-import io.qameta.allure.model.Label;
-import io.qameta.allure.model.Link;
-import io.qameta.allure.model.Status;
-import io.qameta.allure.model.StatusDetails;
-import io.qameta.allure.model.StepResult;
-import io.qameta.allure.model.TestResult;
+import io.qameta.allure.model.*;
 import org.apache.commons.io.FilenameUtils;
 
 import java.util.ArrayList;
@@ -35,6 +28,8 @@ public class Allure2ExportFormatter implements ExportFormatter {
     private static final String DURATION = "duration";
     private static final String STATUS = "testStatus";
     private static final String FAILURE_SUMMARIES = "failureSummaries";
+    private static final String ASSOCIATED_ERROR = "associatedError";
+    private static final String ISSUE_TYPE = "issueType";
 
     private static final String FAILURE_IS_TOP_LEVEL = "isTopLevelFailure";
 
@@ -66,6 +61,8 @@ public class Allure2ExportFormatter implements ExportFormatter {
     private static final String VALUES = "_values";
 
     private static final String SUITE = "suite";
+
+    private static final String ASSERTION_ISSUE_TYPE = "Assertion Failure";
 
     // Must be pre-initialized, {@see https://rules.sonarsource.com/java/RSPEC-4248}
     private static final Pattern ID_PATTERN = Pattern.compile("allure\\.id:(?<id>.*)");
@@ -153,7 +150,7 @@ public class Allure2ExportFormatter implements ExportFormatter {
         }
         if (Objects.nonNull(result.getStart())) {
             if (node.has(DURATION)) {
-                final Double durationText = node.get(DURATION).get(VALUE).asDouble();
+                final double durationText = node.get(DURATION).get(VALUE).asDouble();
                 long durationToMillis = (long) (durationText * 1000);
                 result.setStop(result.getStart() + durationToMillis);
             }
@@ -328,12 +325,33 @@ public class Allure2ExportFormatter implements ExportFormatter {
             case "Expected Failure":
                 return Status.PASSED;
             case "Failure":
-                return Status.FAILED;
+                return testIfBroken(node) ? Status.BROKEN : Status.FAILED;
             case "Skipped":
                 return Status.SKIPPED;
             default:
                 return null;
         }
+    }
+
+    private boolean testIfBroken(final JsonNode node) {
+        return Optional.ofNullable(node.get(FAILURE_SUMMARIES))
+                .map(value -> value.get(VALUES))
+                .map(value -> value.get(0))
+                .map(this::testActivityIfBroken)
+                .orElse(false);
+    }
+
+    private boolean testActivityIfBroken(final JsonNode failActivity) {
+        return Optional.ofNullable(failActivity)
+                .map(value -> value.get(ASSOCIATED_ERROR))
+                .isPresent()
+                ||
+                Optional.ofNullable(failActivity)
+                .map(value -> value.get(ISSUE_TYPE))
+                .map(value -> value.get(VALUE))
+                .map(JsonNode::asText)
+                .filter(value -> !ASSERTION_ISSUE_TYPE.equals(value))
+                .isPresent();
     }
 
     private Optional<String> getActivityTitle(final JsonNode node) {
@@ -357,7 +375,7 @@ public class Allure2ExportFormatter implements ExportFormatter {
         final Long timestamp = parseDate(activityFailure.get(FAILURE_TIMESTAMP).get(VALUE).asText());
         final String message = activityFailure.get(FAILURE_MESSAGE).get(VALUE).asText();
         final String trace = getStackTrace(activityFailure);
-        final Status failedStatus = Status.FAILED;
+        final Status failedStatus = testActivityIfBroken(activityFailure) ? Status.BROKEN : Status.FAILED;
         final StatusDetails failedDetails = new StatusDetails()
                 .setMessage(message)
                 .setTrace(trace);
