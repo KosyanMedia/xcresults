@@ -258,6 +258,7 @@ public class ExportCommand implements Runnable {
                 "xcrun",
                 "xcresulttool",
                 "get",
+                "--legacy",
                 "--format", "json",
                 "--path", inputPath.toAbsolutePath().toString()
         );
@@ -270,6 +271,7 @@ public class ExportCommand implements Runnable {
                 "xcrun",
                 "xcresulttool",
                 "get",
+                "--legacy",
                 "--format", "json",
                 "--path", inputPath.toAbsolutePath().toString(),
                 "--id", id
@@ -283,6 +285,7 @@ public class ExportCommand implements Runnable {
                 "xcrun",
                 "xcresulttool",
                 "export",
+                "--legacy",
                 "--type", "file",
                 "--path", inputPath.toAbsolutePath().toString(),
                 "--id", id,
