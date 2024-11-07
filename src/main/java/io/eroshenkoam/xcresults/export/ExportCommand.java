@@ -285,7 +285,6 @@ public class ExportCommand implements Runnable {
                 "xcrun",
                 "xcresulttool",
                 "export",
-                "--legacy",
                 "--type", "file",
                 "--path", inputPath.toAbsolutePath().toString(),
                 "--id", id,
