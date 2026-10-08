@@ -19,6 +19,7 @@ import java.util.stream.Collectors;
 
 import static io.eroshenkoam.xcresults.export.ExportCommand.FILE_EXTENSION_HEIC;
 import static io.eroshenkoam.xcresults.util.FormatUtil.getAttachmentFileName;
+import static io.eroshenkoam.xcresults.util.FormatUtil.getValues;
 import static io.eroshenkoam.xcresults.util.FormatUtil.parseDate;
 import static java.util.Objects.isNull;
 
@@ -120,13 +121,13 @@ public class Allure2ExportFormatter implements ExportFormatter {
                 .setPath(Collections.singletonList(result));
         context.setFailures(new HashMap<>());
         if (node.has(FAILURE_SUMMARIES)) {
-            node.get(FAILURE_SUMMARIES).get(VALUES).forEach(failure -> {
+            getValues(node.get(FAILURE_SUMMARIES)).forEach(failure -> {
                 final String key = failure.get(ACTIVITY_UUID).get(VALUE).asText();
                 context.getFailures().put(key, failure);
             });
         }
         if (node.has(ACTIVITY_SUMMARIES)) {
-            final Iterable<JsonNode> activities = node.get(ACTIVITY_SUMMARIES).get(VALUES);
+            final Iterable<JsonNode> activities = getValues(node.get(ACTIVITY_SUMMARIES));
             for (JsonNode activity : activities) {
                 parseStep(activity, context);
             }
@@ -209,7 +210,7 @@ public class Allure2ExportFormatter implements ExportFormatter {
         }
 
         final Optional<List<Attachment>> attachments = Optional.ofNullable(activity.get(ATTACHMENTS))
-                .map(a -> a.get(VALUES))
+                .map(a -> getValues(a))
                 .map(this::getAttachments);
         if (activityTitle.startsWith("Start Test at") && activity.has(ACTIVITY_START)) {
             context.getResult().setStart(parseDate(activity.get(ACTIVITY_START).get(VALUE).asText()));
@@ -259,12 +260,12 @@ public class Allure2ExportFormatter implements ExportFormatter {
             step.setStop(parseDate(activity.get(ACTIVITY_FINISH).get(VALUE).asText()));
         }
         if (activity.has(SUBACTIVITIES)) {
-            for (JsonNode subActivity : activity.get(SUBACTIVITIES).get(VALUES)) {
+            for (JsonNode subActivity : getValues(activity.get(SUBACTIVITIES))) {
                 parseStep(subActivity, context.child(step));
             }
         }
         if (activity.has(ACTIVITY_FAILURE_SUMMARY_IDS)) {
-            final Iterable<JsonNode> activityFailures = activity.get(ACTIVITY_FAILURE_SUMMARY_IDS).get(VALUES);
+            final Iterable<JsonNode> activityFailures = getValues(activity.get(ACTIVITY_FAILURE_SUMMARY_IDS));
             for (JsonNode activityFailureUuid : activityFailures) {
                 final String uuid = activityFailureUuid.get(VALUE).asText();
                 final StepResult failureStep = getFailureStep(context.getFailures().get(uuid));
@@ -335,7 +336,7 @@ public class Allure2ExportFormatter implements ExportFormatter {
 
     private boolean testIfBroken(final JsonNode node) {
         return Optional.ofNullable(node.get(FAILURE_SUMMARIES))
-                .map(value -> value.get(VALUES))
+                .map(value -> getValues(value))
                 .map(value -> value.get(0))
                 .map(this::testActivityIfBroken)
                 .orElse(false);
@@ -386,7 +387,7 @@ public class Allure2ExportFormatter implements ExportFormatter {
                 .setStop(timestamp);
         failureStep.setStatusDetails(failedDetails);
         if (activityFailure.has(ATTACHMENTS)) {
-            failureStep.getAttachments().addAll(getAttachments(activityFailure.get(ATTACHMENTS).get(VALUES)));
+            failureStep.getAttachments().addAll(getAttachments(getValues(activityFailure.get(ATTACHMENTS))));
         }
         return failureStep;
     }
@@ -396,7 +397,7 @@ public class Allure2ExportFormatter implements ExportFormatter {
             final JsonNode context = activityFailure.get(SOURCE_CODE_CONTEXT);
             if (context.has(CALL_STACK)) {
                 final List<String> lines = new ArrayList<>();
-                for (JsonNode line : context.findValue(CALL_STACK).get(VALUES)) {
+                for (JsonNode line : getValues(context.findValue(CALL_STACK))) {
                     Optional.ofNullable(line.get(SYMBOL_INFO))
                             .map(v -> v.findValue(LOCATION))
                             .flatMap(this::getFileLineNumber)

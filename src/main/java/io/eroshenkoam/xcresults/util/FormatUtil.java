@@ -1,5 +1,9 @@
 package io.eroshenkoam.xcresults.util;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+
 import java.nio.file.Path;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
@@ -22,6 +26,20 @@ public final class FormatUtil {
 
     public static Path getResultFilePath(final Path outputDir) {
         return outputDir.resolve(getResultFileName());
+    }
+
+    private static final String VALUES = "_values";
+    private static final ArrayNode EMPTY_ARRAY = JsonNodeFactory.instance.arrayNode();
+
+    /**
+     * Safely extract _values from an xcresult array node.
+     * In Xcode 27+, empty arrays lack the _values key entirely.
+     */
+    public static JsonNode getValues(final JsonNode node) {
+        if (node == null || !node.has(VALUES)) {
+            return EMPTY_ARRAY;
+        }
+        return node.get(VALUES);
     }
 
     @SuppressWarnings("PMD.SimpleDateFormatNeedsLocale")
