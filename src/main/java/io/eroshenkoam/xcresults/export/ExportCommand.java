@@ -17,6 +17,7 @@ import java.nio.file.Path;
 import java.util.*;
 
 import static io.eroshenkoam.xcresults.util.FormatUtil.getResultFilePath;
+import static io.eroshenkoam.xcresults.util.FormatUtil.getValues;
 import static io.eroshenkoam.xcresults.util.FormatUtil.parseDate;
 
 @CommandLine.Command(
@@ -113,7 +114,7 @@ public class ExportCommand implements Runnable {
         Files.createDirectories(outputPath);
 
         final Map<String, ExportMeta> testRefIds = new HashMap<>();
-        for (JsonNode action : node.get(ACTIONS).get(VALUES)) {
+        for (JsonNode action : getValues(node.get(ACTIONS))) {
             if (action.get(ACTION_RESULT).has(TEST_REF)) {
                 final ExportMeta meta = new ExportMeta();
                 if (action.has(RUN_DESTINATION)) {
@@ -129,11 +130,11 @@ public class ExportCommand implements Runnable {
         final Map<JsonNode, ExportMeta> testSummaries = new HashMap<>();
         testRefIds.forEach((testRefId, meta) -> {
             final JsonNode testRef = getReference(testRefId);
-            for (JsonNode summary : testRef.get(SUMMARIES).get(VALUES)) {
-                for (JsonNode testableSummary : summary.get(TESTABLE_SUMMARIES).get(VALUES)) {
+            for (JsonNode summary : getValues(testRef.get(SUMMARIES))) {
+                for (JsonNode testableSummary : getValues(summary.get(TESTABLE_SUMMARIES))) {
                     final ExportMeta testMeta = getTestMeta(meta, testableSummary);
-                    if (testableSummary.has(TESTS) && testableSummary.get(TESTS).has(VALUES)) {
-                        for (JsonNode test : testableSummary.get(TESTS).get(VALUES)) {
+                    if (testableSummary.has(TESTS)) {
+                        for (JsonNode test : getValues(testableSummary.get(TESTS))) {
                             getTestSummaries(test).forEach(testSummary -> {
                                 testSummaries.put(testSummary, testMeta);
                             });
@@ -209,7 +210,7 @@ public class ExportCommand implements Runnable {
     private Map<String, String> getAttachmentRefs(final JsonNode test) {
         final Map<String, String> refs = new HashMap<>();
         if (test.has(ATTACHMENTS)) {
-            for (final JsonNode attachment : test.get(ATTACHMENTS).get(VALUES)) {
+            for (final JsonNode attachment : getValues(test.get(ATTACHMENTS))) {
                 if (attachment.has(PAYLOAD_REF)) {
                     final String fileName = attachment.get(FILENAME).get(VALUE).asText();
                     final String attachmentRef = attachment.get(PAYLOAD_REF).get(ID).get(VALUE).asText();
@@ -218,7 +219,7 @@ public class ExportCommand implements Runnable {
             }
         }
         if (test.has(SUBACTIVITIES)) {
-            for (final JsonNode subActivity : test.get(SUBACTIVITIES).get(VALUES)) {
+            for (final JsonNode subActivity : getValues(test.get(SUBACTIVITIES))) {
                 refs.putAll(getAttachmentRefs(subActivity));
             }
         }
@@ -237,7 +238,7 @@ public class ExportCommand implements Runnable {
         }
 
         if (test.has(SUBTESTS)) {
-            for (final JsonNode subTest : test.get(SUBTESTS).get(VALUES)) {
+            for (final JsonNode subTest : getValues(test.get(SUBTESTS))) {
                 summaries.addAll(getTestSummaries(subTest));
             }
         }
@@ -246,8 +247,8 @@ public class ExportCommand implements Runnable {
 
     private List<JsonNode> getAttributeValues(final JsonNode node, final String attributeName) {
         final List<JsonNode> result = new ArrayList<>();
-        if (node.has(attributeName) && node.get(attributeName).has(VALUES)) {
-            node.get(attributeName).get(VALUES).forEach(result::add);
+        if (node.has(attributeName)) {
+            getValues(node.get(attributeName)).forEach(result::add);
         }
         return result;
     }
@@ -258,7 +259,6 @@ public class ExportCommand implements Runnable {
                 "xcrun",
                 "xcresulttool",
                 "get",
-                "--legacy",
                 "--format", "json",
                 "--path", inputPath.toAbsolutePath().toString()
         );
@@ -271,7 +271,6 @@ public class ExportCommand implements Runnable {
                 "xcrun",
                 "xcresulttool",
                 "get",
-                "--legacy",
                 "--format", "json",
                 "--path", inputPath.toAbsolutePath().toString(),
                 "--id", id
