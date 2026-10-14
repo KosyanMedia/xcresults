@@ -107,6 +107,7 @@ public class ExportCommand implements Runnable {
     }
 
     private void runUnsafe() throws Exception {
+        System.out.println("Starting ios xcresult exporter...");
         final JsonNode node = readSummary();
         if (node == null) {
             System.out.println("ERROR: xcresulttool returned no output");
@@ -136,10 +137,17 @@ public class ExportCommand implements Runnable {
                 testRefIds.put(action.get(ACTION_RESULT).get(TEST_REF).get(ID).get(VALUE).asText(), meta);
             }
         }
+        if (testRefIds.isEmpty()) {
+            System.out.println("WARNING: no test actions found in xcresult (no actions contain testsRef)");
+        }
 
         final Map<JsonNode, ExportMeta> testSummaries = new HashMap<>();
         testRefIds.forEach((testRefId, meta) -> {
             final JsonNode testRef = getReference(testRefId);
+            if (testRef == null || !testRef.has(SUMMARIES)) {
+                System.out.printf("WARNING: test reference %s returned no summaries%n", testRefId);
+                return;
+            }
             for (JsonNode summary : getValues(testRef.get(SUMMARIES))) {
                 for (JsonNode testableSummary : getValues(summary.get(TESTABLE_SUMMARIES))) {
                     final ExportMeta testMeta = getTestMeta(meta, testableSummary);
@@ -156,7 +164,11 @@ public class ExportCommand implements Runnable {
             }
         });
 
+        System.out.println("Checking tests and attachments...");
         System.out.printf("Export information about %s test summaries...%n", testSummaries.size());
+        if (testSummaries.isEmpty()) {
+            System.out.println("WARNING: 0 test summaries found, check xcresult file and xcresulttool version");
+        }
         final Map<String, String> attachmentsRefs = new HashMap<>();
         final Map<Path, TestResult> testResults = new HashMap<>();
         for (final Map.Entry<JsonNode, ExportMeta> entry : testSummaries.entrySet()) {
